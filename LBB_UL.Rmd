@@ -1,0 +1,356 @@
+---
+title: "LBB_UL"
+author: "Luthfi"
+date: "2023-11-13"
+output:
+  html_document:
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float:
+      collapsed: false
+    number_sections: true
+    df_print: paged
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+# 1. Unsupervised Learning : COUNTRY CLASSIFICATION
+
+```{r}
+library(knitr)
+knitr::include_graphics("data_input/world_map.jpg")
+```
+
+`Img Source` : <https://wallpapers.com/wallpapers/world-map-aesthetic-tgal29goiwyfl17g.html>
+
+`link`: <https://www.kaggle.com/datasets/rohan0301/unsupervised-learning-on-country-data>
+
+As a data scientist tasked with supporting **HELP International's strategic decision-making**, you are presented with the challenge of allocating a recently raised \$10 million budget effectively.
+The goal is to identify and categorize countries based on **socio-economic** and **health factors**, ultimately aiding the CEO in selecting nations with the most urgent needs for targeted assistance.
+In this project, we will leverage clustering techniques in R to group countries based on key indicators that contribute to their overall development.
+The outcome of this analysis will provide actionable insights to guide HELP International in prioritizing and focusing its efforts on countries in dire need of aid.
+
+## 1.1 Notes on Specific Variables
+
+-   `country` = Name of the country
+-   `child_mort` = Death of children under 5 years of age per 1000 live births
+-   `exports` = Exports of goods and services per capita. Given as %age of the GDP per capita
+-   `health` = Total health spending per capita. Given as %age of GDP per capita
+-   `imports` = Imports of goods and services per capita. Given as %age of the GDP per capita
+-   `income` = Net income per person
+-   `inflation` = The measurement of the annual growth rate of the Total GDP
+-   `life_expec` = The average number of years a new born child would live if the current mortality patterns are to remain the same
+-   `total_fer` = The number of children that would be born to each woman if the current age-fertility rates remain the same.
+-   `gdpp` = The GDP per capita. Calculated as the Total GDP divided by the total population.
+
+## 1.2 Objective
+
+To categorize the countries using socio-economic and health factors that determine the overall development of the country.
+
+# 2. DATA PREPERATION
+
+The First step is inserting the csv file into R located in data_input and then installing the necessary plugins including `dplyr`, `lubridate`, `caret`, etc.
+
+```{r}
+#Read data csv
+country <- read.csv("data_input/Country-data.csv")
+
+# Load libraries for unsupervised machine learning
+library(dplyr)       # Data manipulation used for preprocessing and cleaning data
+library(lubridate)   # Handling date-time data used for feature engineering in time-series data
+library(GGally)      # Scatterplot matrices used for exploring relationships and identifying patterns
+library(factoextra)  # Visualizing multivariate analysis results used for enhancing interpretability
+library(FactoMineR)  # Multivariate exploratory data analysis used for extracting patterns and relationships
+library(animation)   # Creating animated visualizations used for dynamic data exploration
+library(tidyr)       # Tidying and reshaping data used for preparing data for analysis
+library(ggiraphExtra) # Interactive plots using ggplot2 used for exploring and identifying insights interactively
+library(gridExtra)   # Creating multiple plots in a single command
+library(plotly)      # Creating interactive plots for dynamic data exploration
+
+
+```
+
+Next, we will observe our data set which we exported from the *csv*.
+
+```{r}
+head(country)
+```
+
+We will also observe the `glimpse()` to check all the columns.
+
+```{r}
+glimpse(country)
+```
+
+Checking if there are any NA in dataset
+
+```{r}
+colSums(is.na(country))
+```
+
+Mutating `dbl` columns into `int`
+
+```{r}
+# data cleaning
+country_int <- country %>%
+  mutate_at(c("child_mort","exports","health", "imports", "inflation", "life_expec", "total_fer"), as.integer) %>%
+  select_if(is.numeric)
+```
+
+# 3. DATA EXPLORATION
+
+First, we will inspect the summary of `country_int`
+
+```{r}
+summary(country_int)
+```
+
+## 3.1 Principle Component Analysis
+
+Next, we will need to create a Principle Component using the command `prcomp` using the data `country_int` which we have prepared for by removing the factor column and only has interger columns within it.
+We will use `scale = TRUE` since by reading the summary, the numbers of the interger aren't scaled yet.
+
+```{r}
+pca <- prcomp(country_int, scale = TRUE)
+pca
+```
+
+```{r}
+# Subsetting 50 data
+country_50 <- country_int %>%  head(n = 50)
+
+# Scaling for 50 data
+pca_50 <- prcomp(country_50, scale = T)
+  
+# Generating biplot
+biplot(x = pca_50, # data pca_small yang sudah diambil 100 data untuk contoh
+       cex = 0.7, # untuk mengatur ukuran font panah-panah merah
+       scale = F) # kita hanya lakukan scaling saat pembuatan PCA menggunakan prcomp()
+```
+
+The insight we got from the plot above are: - `child_mort` and `total_fer` are positively correlated to each other shown by how closely the lines in the graph are.
+- `child_mort` and `total_fer` are negatively correlated with `life_expec` as their line goes on a different direction on an almost 180 degree line.
+- `health` and `inflation` are also negatively correlated, but not as strong.
+- `imports` and `exports` are positively related to each other shown by how closely the lines in the graph are.
+- However, imports and exports doesnt have any correlation / there are no sign of correlations with `child_mort`, `total_fer`, `life_expec`.
+- The data has almost no outliers as they are distributed evenly acrossed the graph.
+
+```{r}
+ggcorr(country_int, label = T, hjust =1)
+```
+
+As we can see, the biplot and the ggcorr reveals the same positives, negatives, and no correlations between predictors in the data.
+So we could confirm that the biplot data is correct.
+
+```{r}
+summary(pca)
+```
+
+By checking the summary of the PCA, we could summarize that the highest proportion of the components are lcoated at PC1 and followed by PC2, and PC3.Also, by using only up to PC4, we could already create an unsupervised learning with only 86.8% of the data due to factors such as algorithmic design, computational complexity, and practical considerations.
+
+## 3.2 Principle Component Distribution
+
+```{r, out.width = "100%", echo = FALSE, fig.align = "center"}
+# Create a list to store the plots
+plots <- list()
+
+# Create individual plots for axes 1 to 9
+for (i in 1:9) {
+  plot <- fviz_contrib(
+    X = pca,
+    choice = "var",
+    axes = i
+  )
+  plots[[i]] <- plot
+}
+
+# Arrange plots in a grid
+grid.arrange(grobs = plots, ncol = 4)
+```
+
+The plot above shows which predictor variable contributes the most for each principle components.
+For example, on PCA1, the most contributing variables are : `life_expec`, `child_mort`, `total_fer`, `income`, and `gdpp`.
+The blue bar that reaches on top of the red line signals that they are important contributors of a principle component, while the bars below that are not.
+
+## 3.3 Principle Component Data Set
+
+```{r}
+#Take 85% 
+pc_4 <- as.data.frame(pca$x[,1:4])
+
+#Showcasing data
+pc_4
+```
+
+# 4. PREDICTION
+
+To create the most optimal clustering model, we first must find the appropriate n for k-means.
+We could find this number by using the command `fviz_nbclust` which will generate a line plot by using the country_int data set.
+This command also has three options for the method, which are: **wss**, **silhoutte**, and **gap_stat**.
+
+## 4.1 K Number
+
+```{r}
+# WSS method
+wss_plot <- fviz_nbclust(
+  x = country_int,
+  FUNcluster = kmeans,
+  method = "wss"
+)
+
+# Silhouette method
+silhouette_plot <- fviz_nbclust(
+  x = country_int,
+  FUNcluster = kmeans,
+  method = "silhouette"
+)
+
+# Gap Stat method
+gap_stat_plot <- fviz_nbclust(
+  x = country_int,
+  FUNcluster = kmeans,
+  method = "gap_stat"
+)
+
+grid.arrange(wss_plot, silhouette_plot, gap_stat_plot, ncol = 3)
+```
+
+From the plot above by using the method "wss" , it is shown that, at number 5 the line starts to flatten.
+Therefore by using this method, the optimal number is 5.
+However from using the silhoutte method, it shows that the optimal number is 2.
+While the gap_stat method shows that the optimal number is 6.
+To determine between these 3 numbers which one is optimal.
+We must calculate the `betweenss / totss` and which one of these numbers are closer to 1.
+
+```{r}
+# Silhoutte Method
+country_sil <- kmeans(x = country_int, 
+                 centers = 2) # Inputting K
+
+# WSS Method
+country_wss <- kmeans(x = country_int, 
+                 centers = 5) # Inputting K
+
+# Gap Stat Method
+country_gap <- kmeans(x = country_int, 
+                 centers = 6) # Inputting K
+```
+
+```{r}
+#Checking the optimal K
+country_sil$betweenss /country_sil$totss
+country_wss$betweenss /country_wss$totss
+country_gap$betweenss /country_gap$totss
+```
+
+From the calculation above, it is concluided that the **gap_stat** model is the most accurate with the value of *0.9111229* while, the **silhouette** model is the furthest with the value of *0.6890134*.
+
+## 4.2 Clustering Result
+
+```{r}
+as.data.frame(country_gap$centers)
+```
+
+Based on the data frame above, the insights we gain are : - **Cluster 1** contains countries with the highest number of exports, imports, income, and gdpp - **Cluster 2** doesn't have any significant high / low predictors - **Cluster 3** has the lowest number of child_mort, imports, inflation, and total_fer, while being the highest on health.
+- **Cluster 4** doesn't have any significant high / low predictors - **Cluster 5** doesn't have any significant high / low predictors - **Cluster 6** has the highest numer of child_mort ,total_fer, inflation, and total_fer , while having the lowest numbers on exports ,income, and gdpp.
+
+```{r}
+# Profiling each category
+country$cluster <-  as.factor(country_gap$cluster)
+country
+```
+
+```{r, out.width = "70%", echo = FALSE, fig.align = "center"}
+ggRadar(data=country, 
+        aes(colour=cluster), 
+        interactive=TRUE)
+```
+
+### 4.2.1 Cluster 1
+
+```{r}
+# List of countries on Cluster 1
+country %>% 
+  filter(cluster==1)
+```
+
+### 4.2.2 Cluster 2
+
+```{r}
+# List of countries on Cluster 2
+country %>% 
+  filter(cluster==2)
+```
+
+### 4.2.3 Cluster 3
+
+```{r}
+# List of countries on Cluster 3
+country %>% 
+  filter(cluster==3)
+```
+
+### 4.2.4 Cluster 4
+
+```{r}
+# List of countries on Cluster 4
+country %>% 
+  filter(cluster==4)
+```
+
+### 4.2.5 Cluster 5
+
+```{r}
+# List of countries on Cluster 5
+country %>% 
+  filter(cluster==5)
+```
+
+### 4.2.6 Cluster 6
+
+```{r}
+# List of countries on Cluster 6
+country %>% 
+  filter(cluster==6)
+```
+
+```{r}
+country_int$cluster <-  as.factor(country_gap$cluster)
+fviz_cluster(object = country_gap, data = country_int %>% select(-cluster))
+```
+
+```{r}
+pca_4 <- data.frame(pca$rotation) %>% select(c(1,2,3,4))
+pca_bind <- cbind(pca_4, cluster = country$cluster)
+```
+
+```{r}
+plot_ly(pca_4, x = ~Dim.1, y = ~Dim.2, z = ~Dim.3, color = ~cluster, colors = c(
+  "red", "green", "blue", "yellow", "orange")) %>%
+  add_markers() %>%
+  layout(scene = list(xaxis = list(title = "Dim.1"), 
+                      yaxis = list(title = "Dim.2"), 
+                      zaxis = list(title = "Dim.3")))
+```
+
+# 5. SUMMARY
+
+-   Key correlations include negative associations between child mortality and total fertility, health and inflation, and a positive relationship between imports and exports, while no evident correlations exist between imports, exports, child mortality, total fertility, and life expectancy, with minimal presence of outliers in the evenly distributed data.
+-   Using 86% of PCA of the model to avoid overfitting and computational inefficiencies, especially in cases where some components may contain noise or redundant information.
+-   By using the **gap_stat** method, with the value of **0.9111229**, we divided the data set of countries into 6 clusters.
+-   Clusters vary in economic indicators, child mortality, and health. **Cluster 1** contains mostly of rich countries, **Cluster 3** is the healthiest, **Cluster 6** is the poorest, while Cluster 2,4, and 5 doesn't have any significant predictors.
+
+```{r}
+# 3D Plotting
+country_pca <- PCA(country[,2:9], graph = F,)
+country_pca1 <- data.frame(country_pca$ind$coord)
+country_pcac <- cbind(country_pca1, cluster = country$cluster)
+
+plot_ly(country_pcac, x = ~Dim.1, y = ~Dim.2, z = ~Dim.3, color = ~cluster, colors = c('red', 'blue', 'green', 'yellow', 'black', 'purple')) %>%
+  add_markers() %>%
+  layout(scene = list(xaxis = list(title = 'Dim.1'),
+                      yaxis = list(title = 'Dim.2'),
+                      zaxis = list(title = 'Dim.3')))
+```
